@@ -188,7 +188,8 @@ namespace computefhe {
                 reinterpret_cast<Evector<Einteger> &>(*this), index);
             // TODO: Use below in client-mode only
             return Eitem<Einteger, uint64_t>(
-                reinterpret_cast<Evector<Einteger> &>(*this), (size_t)index);
+                reinterpret_cast<Evector<Einteger> &>(*this),
+                static_cast<size_t>(static_cast<uint64_t>(index)));
         }
 
         /**
@@ -217,7 +218,8 @@ namespace computefhe {
         Eitem<Einteger, uint64_t> operator[](const Einteger &index) {
             return Eitem<Einteger, uint64_t>(*this, index);
             // TODO: Use below in client-mode only
-            return Eitem<Einteger, uint64_t>(*this, (size_t)index);
+            return Eitem<Einteger, uint64_t>(
+                *this, static_cast<size_t>(static_cast<uint64_t>(index)));
         }
 
         /** @brief Access element using a plaintext index. */
@@ -243,7 +245,8 @@ namespace computefhe {
         Eitem<Efixedpoint, double> operator[](const Einteger &index) {
             return Eitem<Efixedpoint, double>(*this, index);
             // TODO: Use below in client-mode only
-            return Eitem<Efixedpoint, double>(*this, (size_t)index);
+            return Eitem<Efixedpoint, double>(
+                *this, static_cast<size_t>(static_cast<uint64_t>(index)));
         }
 
         /** @brief Access element using a plaintext index. */
@@ -272,7 +275,8 @@ namespace computefhe {
                 reinterpret_cast<Evector<Efixedpoint> &>(*this), index);
             // TODO: Use below in client-mode only
             return Eitem<Efixedpoint, double>(
-                reinterpret_cast<Evector<Efixedpoint> &>(*this), (size_t)index);
+                reinterpret_cast<Evector<Efixedpoint> &>(*this),
+                static_cast<size_t>(static_cast<uint64_t>(index)));
         }
 
         /** @brief Access element using a plaintext index. */

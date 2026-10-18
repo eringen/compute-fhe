@@ -415,7 +415,7 @@ ostream &computefhe::operator<<(ostream &out, const Efixedpoint &obj) {
         OPENFHE_THROW("Not allowed in server mode.");
 
     if (obj.sign) {
-        out << (double)Einteger::sign_extend(
+        out << (double)Efixedpoint::sign_extend(
                    cfhe_base->DecryptInt(obj.data, obj.size), obj.size) /
                    (1 << obj.frac_size);
     } else {

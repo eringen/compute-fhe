@@ -375,8 +375,8 @@ void CFHE_Test::PrintTestReport(TestReport report, int64_t n, int64_t result) {
     if (verbosity >= 2 && report.test_result == TR_FAIL) {
         cout << "*** FAILED: ";
     }
-    if (verbosity >= 2 && report.test_result == TR_FAIL ||
-        verbosity >= 3 && report.test_result == TR_SUCCESS) {
+    if ((verbosity >= 2 && report.test_result == TR_FAIL) ||
+        (verbosity >= 3 && report.test_result == TR_SUCCESS)) {
         cout << "n: " << n << " result: " << result << endl;
     }
 }
@@ -389,8 +389,8 @@ void CFHE_Test::PrintTestReport(TestReport report, int64_t n, int64_t result,
     if (verbosity >= 2 && report.test_result == TR_FAIL) {
         cout << "*** FAILED: ";
     }
-    if (verbosity >= 2 && report.test_result == TR_FAIL ||
-        verbosity >= 3 && report.test_result == TR_SUCCESS) {
+    if ((verbosity >= 2 && report.test_result == TR_FAIL) ||
+        (verbosity >= 3 && report.test_result == TR_SUCCESS)) {
         cout << "n: " << n << " result: " << result << " expected: " << expected
              << endl;
     }
@@ -404,8 +404,8 @@ void CFHE_Test::PrintTestReport(TestReport report, int64_t n1, int64_t n2,
     if (verbosity >= 2 && report.test_result == TR_FAIL) {
         cout << "*** FAILED: ";
     }
-    if (verbosity >= 2 && report.test_result == TR_FAIL ||
-        verbosity >= 3 && report.test_result == TR_SUCCESS) {
+    if ((verbosity >= 2 && report.test_result == TR_FAIL) ||
+        (verbosity >= 3 && report.test_result == TR_SUCCESS)) {
         cout << "n1: " << n1 << " n2: " << n2 << " result: " << result
              << " expected: " << expected << endl;
     }
@@ -419,8 +419,8 @@ void CFHE_Test::PrintTestReport(TestReport report, int64_t n1, int64_t n2,
     if (verbosity >= 2 && report.test_result == TR_FAIL) {
         cout << "*** FAILED: ";
     }
-    if (verbosity >= 2 && report.test_result == TR_FAIL ||
-        verbosity >= 3 && report.test_result == TR_SUCCESS) {
+    if ((verbosity >= 2 && report.test_result == TR_FAIL) ||
+        (verbosity >= 3 && report.test_result == TR_SUCCESS)) {
         cout << "n1: " << n1 << " n2: " << n2 << " n3: " << n3
              << " result: " << result << " expected: " << expected << endl;
     }

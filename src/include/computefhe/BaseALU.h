@@ -131,8 +131,8 @@ namespace computefhe {
          */
         ///@{
 
-        /** @brief Multiplexer for FixedPoint values: returns 'a' if 's' is
-         * true, else 'b'. */
+        /** @brief Multiplexer for FixedPoint values: returns 'b' if 's' is
+         * true, else 'a'. */
         virtual FixedPoint Mux(const BinaryDigit &s, const FixedPoint &a,
                                const FixedPoint &b) = 0;
 

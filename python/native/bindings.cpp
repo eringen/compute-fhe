@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: MIT
+#include <pybind11/pybind11.h>
+#include <computefhe/ComputeFHE.h>
+
+namespace py = pybind11;
+using namespace computefhe;
+
+// These low-level objects are private implementation details. Python owns the
+// lifetime checks and retains the GIL for every call into the global backend.
+namespace {
+void require_context() {
+    if (!cfhe_base) throw std::runtime_error("No active ComputeFHE context");
+}
+
+Einteger integer(uint64_t value, size_t bits, bool sign, bool encrypt) {
+    require_context();
+    if (bits < 1 || bits > 64) throw py::value_error("bits must be in [1, 64]");
+    return Einteger(encrypt ? cfhe_base->EncryptInt(value, bits)
+                            : cfhe_base->GetConstantInt(value, bits), sign);
+}
+
+template <class T> T binary(const std::string &op, const T &a, const T &b) {
+    require_context();
+    if (op == "add") return a + b;
+    if (op == "sub") return a - b;
+    if (op == "mul") return a * b;
+    if (op == "div") return a / b;
+    throw py::value_error("Unknown arithmetic operation");
+}
+
+template <class T> Einteger compare(const std::string &op, const T &a, const T &b) {
+    require_context();
+    if (op == "eq") return a == b;
+    if (op == "ne") return a != b;
+    if (op == "lt") return a < b;
+    if (op == "le") return a <= b;
+    if (op == "gt") return a > b;
+    if (op == "ge") return a >= b;
+    throw py::value_error("Unknown comparison");
+}
+
+Einteger unsigned_division(const Einteger &a, const Einteger &b, bool remainder) {
+    require_context();
+    // Avoid upstream's process-global division cache surviving context changes.
+    FixedPoint quotient, rest;
+    cfhe_base->GetALU()->DivU(a.getData(), b.getData(), quotient, rest);
+    return Einteger(remainder ? rest : quotient, a.isSigned());
+}
+}
+
+PYBIND11_MODULE(_native, m) {
+    m.doc() = "Private ComputeFHE bindings; use the public computefhe API";
+    m.def("init", [](int parameter, bool optimized, bool simulation) {
+        if (cfhe_base) throw std::runtime_error("A context is already active");
+        if (parameter < 0 || parameter > 12) throw py::value_error("Invalid parameter");
+        // Simulation does not need the expensive cryptographic key generation.
+        Init(static_cast<CryptoContextParam>(parameter),
+             optimized ? ALU_OPTIMIZED : ALU_STANDARD, !simulation, simulation);
+        cfhe_base->setAutoEncryptMode(false);
+    });
+    m.def("finalize", &Finalize);
+    py::class_<Einteger>(m, "Integer")
+        .def_property_readonly("bits", &Einteger::getSize)
+        .def_property_readonly("signed", &Einteger::isSigned);
+    py::class_<Efixedpoint>(m, "Fixed")
+        .def_property_readonly("bits", &Efixedpoint::getSize)
+        .def_property_readonly("signed", &Efixedpoint::isSigned)
+        .def_property_readonly("frac", &Efixedpoint::getFracSize);
+    m.def("integer", &integer);
+    m.def("fixed", [](uint64_t raw, size_t bits, size_t frac, bool sign, bool encrypt) {
+        if (frac >= bits) throw py::value_error("frac must be smaller than bits");
+        return Efixedpoint(integer(raw, bits, sign, encrypt).getData(), frac, sign);
+    });
+    m.def("decrypt_int", [](const Einteger &a) {
+        require_context();
+        return cfhe_base->DecryptInt(a.getData());
+    });
+    m.def("decrypt_fixed", [](const Efixedpoint &a) {
+        require_context();
+        return cfhe_base->DecryptInt(a.getData());
+    });
+    m.def("arithmetic", [](const std::string &op, const Einteger &a, const Einteger &b) {
+        return op == "div" ? unsigned_division(a, b, false) : binary(op, a, b);
+    });
+    m.def("fixed_arithmetic", &binary<Efixedpoint>);
+    m.def("compare", &compare<Einteger>);
+    m.def("fixed_compare", &compare<Efixedpoint>);
+    m.def("bitwise", [](const std::string &op, const Einteger &a, const Einteger &b) {
+        require_context();
+        if (op == "and") return a & b;
+        if (op == "or") return a | b;
+        if (op == "xor") return a ^ b;
+        if (op == "mod") return unsigned_division(a, b, true);
+        throw py::value_error("Unknown bitwise operation");
+    });
+    m.def("invert", [](const Einteger &a) { require_context(); return ~a; });
+    m.def("negate", [](const Einteger &a) { require_context(); return -a; });
+    m.def("fixed_negate", [](const Efixedpoint &a) { require_context(); return -a; });
+    m.def("shift", [](const Einteger &a, int amount, bool left) {
+        require_context();
+        if (amount < 0 || amount >= static_cast<int>(a.getSize()))
+            throw py::value_error("shift must be in [0, bits)");
+        return left ? a << amount : a >> amount;
+    });
+    m.def("cast", [](const Einteger &a, size_t bits, bool sign) {
+        require_context();
+        if (bits < 1 || bits > 64) throw py::value_error("bits must be in [1, 64]");
+        return Einteger(Einteger::promote(a, bits), sign);
+    });
+    m.def("select", [](const Einteger &c, const Einteger &a, const Einteger &b) {
+        require_context();
+        if (c.getSize() != 1 || a.getSize() != b.getSize() || a.isSigned() != b.isSigned())
+            throw py::value_error("select requires a boolean and matching value types");
+        // The backend selects its third operand when s=1.
+        // Python select(c, a, b) means c ? a : b.
+        return Einteger(cfhe_base->GetALU()->Mux(c.getData()[0], b.getData(), a.getData()), a.isSigned());
+    });
+    m.def("fixed_select", [](const Einteger &c, const Efixedpoint &a, const Efixedpoint &b) {
+        require_context();
+        if (c.getSize() != 1 || a.getSize() != b.getSize() || a.isSigned() != b.isSigned() || a.getFracSize() != b.getFracSize())
+            throw py::value_error("select requires a boolean and matching value types");
+        return Efixedpoint(cfhe_base->GetALU()->Mux(c.getData()[0], b.getData(), a.getData()), a.getFracSize(), a.isSigned());
+    });
+}

@@ -202,7 +202,7 @@ class EncryptedInt(_Value):
         if other is NotImplemented:
             return NotImplemented
         a, b = (other, self) if reverse else (self, other)
-        fn = _native.bitwise if op in ("and", "or", "xor", "mod") else _native.arithmetic
+        fn = _native.bitwise if op in ("and", "or", "xor") else _native.arithmetic
         return EncryptedInt._wrap(fn(op, a._value, b._value), self._context)
 
     def __and__(self, other): return self._binary(other, "and")
@@ -235,24 +235,17 @@ class EncryptedInt(_Value):
     def __rshift__(self, amount): return self._shift(amount, False)
 
     def __divmod__(self, other):
+        self._context._check()
+        if self.signed:
+            raise NotImplementedError("Signed division is not supported by ComputeFHE")
         if isinstance(other, int) and other == 0:
             raise ZeroDivisionError("integer division by zero")
         other = self._coerce(other)
         if other is NotImplemented:
             return NotImplemented
-        if not self.signed:
-            return self._binary(other, "div"), self._binary(other, "mod")
-        # Upstream DivU is unsigned. Compute magnitudes homomorphically and
-        # restore Python's floor-division semantics without inspecting secrets.
-        a_neg, b_neg = self < 0, other < 0
-        a = select(a_neg, -self, self).cast(signed=False)
-        b = select(b_neg, -other, other).cast(signed=False)
-        q = a._binary(b, "div").cast(signed=True)
-        remainder = a._binary(b, "mod")
-        different_signs = a_neg ^ b_neg
-        q = select(different_signs, -q, q)
-        q = select(different_signs & (remainder != 0), q - 1, q)
-        return q, self - q * other
+        quotient, remainder = _native.unsigned_divmod(self._value, other._value)
+        return (EncryptedInt._wrap(quotient, self._context),
+                EncryptedInt._wrap(remainder, self._context))
 
     def __floordiv__(self, other):
         result = self.__divmod__(other)

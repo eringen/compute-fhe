@@ -22,7 +22,7 @@ and wheel packaging, install `build` and run `python -m build python`.
 
 The suite uses the actual native simulator, including exhaustive four-bit
 arithmetic on both ALUs. Set `COMPUTEFHE_TEST_CRYPTO=1` to include real TOY
-cryptography tests for arithmetic, signed division, selection, vectors, and
+cryptography tests for arithmetic, unsigned division, selection, vectors, and
 fixed-point operations. TOY parameters are only appropriate for tests.
 
 Keep decryption explicit and preserve context ownership checks. The backend's
@@ -30,5 +30,6 @@ single global context requires operations to run in the creating thread; the
 bindings retain the GIL. Tests must not replace native FHE with a Python mock.
 
 Initial scope covers local client and simulator contexts. Server key exchange,
-ciphertext serialization, fixed-point division, and the complete low-level ALU
-API are not yet exposed. These need separate API and correctness reviews.
+ciphertext serialization, signed division, fixed-point division, and the complete
+low-level ALU API are not exposed. The wrapper delegates unsigned division to
+native `DivU` and does not implement missing division algorithms.

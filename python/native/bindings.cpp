@@ -24,7 +24,6 @@ template <class T> T binary(const std::string &op, const T &a, const T &b) {
     if (op == "add") return a + b;
     if (op == "sub") return a - b;
     if (op == "mul") return a * b;
-    if (op == "div") return a / b;
     throw py::value_error("Unknown arithmetic operation");
 }
 
@@ -39,12 +38,19 @@ template <class T> Einteger compare(const std::string &op, const T &a, const T &
     throw py::value_error("Unknown comparison");
 }
 
-Einteger unsigned_division(const Einteger &a, const Einteger &b, bool remainder) {
+py::tuple unsigned_divmod(const Einteger &a, const Einteger &b) {
     require_context();
-    // Avoid upstream's process-global division cache surviving context changes.
-    FixedPoint quotient, rest;
-    cfhe_base->GetALU()->DivU(a.getData(), b.getData(), quotient, rest);
-    return Einteger(remainder ? rest : quotient, a.isSigned());
+    if (a.isSigned() || b.isSigned()) {
+        PyErr_SetString(PyExc_NotImplementedError,
+                        "Signed division is not supported by ComputeFHE");
+        throw py::error_already_set();
+    }
+    if (a.getSize() != b.getSize())
+        throw py::value_error("Division operands must have matching widths");
+    // DivU already produces both outputs. Return them from one native call.
+    FixedPoint quotient, remainder;
+    cfhe_base->GetALU()->DivU(a.getData(), b.getData(), quotient, remainder);
+    return py::make_tuple(Einteger(quotient, false), Einteger(remainder, false));
 }
 }
 
@@ -79,9 +85,8 @@ PYBIND11_MODULE(_native, m) {
         require_context();
         return cfhe_base->DecryptInt(a.getData());
     });
-    m.def("arithmetic", [](const std::string &op, const Einteger &a, const Einteger &b) {
-        return op == "div" ? unsigned_division(a, b, false) : binary(op, a, b);
-    });
+    m.def("arithmetic", &binary<Einteger>);
+    m.def("unsigned_divmod", &unsigned_divmod);
     m.def("fixed_arithmetic", &binary<Efixedpoint>);
     m.def("compare", &compare<Einteger>);
     m.def("fixed_compare", &compare<Efixedpoint>);
@@ -90,7 +95,6 @@ PYBIND11_MODULE(_native, m) {
         if (op == "and") return a & b;
         if (op == "or") return a | b;
         if (op == "xor") return a ^ b;
-        if (op == "mod") return unsigned_division(a, b, true);
         throw py::value_error("Unknown bitwise operation");
     });
     m.def("invert", [](const Einteger &a) { require_context(); return ~a; });

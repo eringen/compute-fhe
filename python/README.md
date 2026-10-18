@@ -50,10 +50,13 @@ requires the native libraries. `Parameters.TOY` is for testing, not security.
 
 - `Ebool`, `Eint8/16/32/64`, `Euint8/16/32/64`, or
   `EncryptedInt(value, bits=32, signed=True)` for widths from 1 through 64.
-- Integer `+ - * // %`, comparisons, `& | ^ ~`, and public-count shifts.
-  Results retain the width and wrap modulo `2**bits`. Signed `//` and `%`
-  follow Python floor division, with fixed-width overflow (including minimum
-  signed integer divided by -1). `/` is deliberately undefined for integers.
+- Integer `+ - *`, comparisons, `& | ^ ~`, and public-count shifts.
+  Results retain the width and wrap modulo `2**bits`.
+- `//`, `%`, and `divmod()` are supported only for unsigned integers. Each
+  operation calls the existing native `DivU` routine once, which produces both
+  quotient and remainder. The wrapper adds no division algorithm or additional
+  division optimization. Signed division raises `NotImplementedError`, even
+  for positive signed values. `/` is deliberately undefined for integers.
 - `EncryptedFixed(value, bits=32, frac=16, signed=True)` supports `+ - *`,
   negation, and comparisons. Inputs truncate toward zero at `2**-frac`.
   Multiplication preserves upstream behavior: it drops low operand bits before
@@ -76,7 +79,7 @@ requires the native libraries. `Parameters.TOY` is for testing, not security.
   scan every element. An invalid encrypted index reads zero or leaves the vector
   unchanged; it cannot raise a data-dependent exception. Plain indices follow
   Python indexing. Vectors must be nonempty and homogeneous.
-- Division by a public zero raises `ZeroDivisionError`. An encrypted divisor
+- Unsigned division by a public zero raises `ZeroDivisionError`. An encrypted divisor
   must be nonzero: the wrapper does not decrypt it to check. Use an encrypted
   comparison and `select()` to substitute a nonzero divisor when needed.
 - There is one active context per process, restricted to the creating thread.

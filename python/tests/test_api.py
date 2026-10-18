@@ -1,6 +1,9 @@
 import os
 import threading
 import unittest
+from unittest.mock import patch
+
+from computefhe import _native
 
 from computefhe import (
     Context, Parameters, EncryptedInt, EncryptedFixed, EncryptedVector,
@@ -22,22 +25,56 @@ class SimulationTests(unittest.TestCase):
         ]:
             self.assertEqual(result.decrypt(), expected)
 
-    def test_signed_floor_division(self):
-        for a in [-128, -21, -7, 0, 7, 21, 127]:
-            for b in [-7, -3, -1, 1, 3, 7]:
-                with self.subTest(a=a, b=b):
-                    q, r = divmod(Eint8(a), Eint8(b))
-                    expected_q = ((a // b + 128) % 256) - 128
-                    self.assertEqual(q.decrypt(), expected_q)
-                    self.assertEqual(r.decrypt(), a % b)
-        self.assertEqual((20 // Eint8(3)).decrypt(), 6)
-        self.assertEqual((20 % Eint8(3)).decrypt(), 2)
-        with self.assertRaises(ZeroDivisionError):
-            Eint8(3) // 0
+    def test_signed_division_is_unsupported(self):
+        for encrypted in [False, True]:
+            for value in [-128, -7, 0, 7, 127]:
+                a = Eint8(value, encrypted=encrypted)
+                for b in [0, 3, Eint8(3, encrypted=encrypted)]:
+                    for operation in [lambda: a // b, lambda: a % b,
+                                      lambda: divmod(a, b)]:
+                        with self.subTest(value=value, encrypted=encrypted):
+                            with self.assertRaisesRegex(NotImplementedError, "Signed division"):
+                                operation()
+                for operation in [lambda: 20 // a, lambda: 20 % a]:
+                    with self.assertRaisesRegex(NotImplementedError, "Signed division"):
+                        operation()
+        # The private binding also rejects signed operands rather than treating
+        # their bit patterns as unsigned values.
+        a, b = Eint8(7), Euint8(3)
+        with self.assertRaises(NotImplementedError):
+            _native.unsigned_divmod(a._value, b._value)
+        with self.assertRaises(NotImplementedError):
+            _native.unsigned_divmod(b._value, a._value)
 
     def test_unsigned_division(self):
-        self.assertEqual((Euint8(255) // Euint8(7)).decrypt(), 36)
+        for encrypt_a in [False, True]:
+            for encrypt_b in [False, True]:
+                a = Euint8(255, encrypted=encrypt_a)
+                b = Euint8(7, encrypted=encrypt_b)
+                q, r = divmod(a, b)
+                self.assertEqual((q.decrypt(), r.decrypt()), (36, 3))
+                self.assertEqual((a // b).decrypt(), 36)
+                self.assertEqual((a % b).decrypt(), 3)
+        self.assertEqual((Euint8(255) // 7).decrypt(), 36)
         self.assertEqual((Euint8(255) % 7).decrypt(), 3)
+        self.assertEqual((255 // Euint8(7)).decrypt(), 36)
+        self.assertEqual((255 % Euint8(7)).decrypt(), 3)
+        for operation in [lambda: Euint8(3) // 0, lambda: Euint8(3) % 0,
+                          lambda: divmod(Euint8(3), 0)]:
+            with self.assertRaises(ZeroDivisionError):
+                operation()
+
+    def test_division_uses_one_native_call(self):
+        a, b = Euint8(255), Euint8(7)
+        for operation, expected in [(lambda: a // b, 36), (lambda: a % b, 3),
+                                    (lambda: divmod(a, b), (36, 3))]:
+            # Count calls while still executing the actual native backend.
+            with patch.object(_native, "unsigned_divmod", wraps=_native.unsigned_divmod) as native_call:
+                result = operation()
+                actual = (tuple(x.decrypt() for x in result) if isinstance(result, tuple)
+                          else result.decrypt())
+                self.assertEqual(actual, expected)
+                self.assertEqual(native_call.call_count, 1)
 
     def test_comparisons_and_selection(self):
         a, b = Eint8(-3), Eint8(5)
@@ -166,7 +203,7 @@ class ContextTests(unittest.TestCase):
                             self.assertEqual((x * y).decrypt(), wrap(a * b))
                             self.assertEqual((x < y).decrypt(), int(a < b))
                             self.assertEqual(select(x < y, x, y).decrypt(), min(a, b))
-                            if b:
+                            if b and not signed:
                                 q, r = divmod(x, y)
                                 self.assertEqual(q.decrypt(), wrap(a // b))
                                 self.assertEqual(r.decrypt(), a % b)
@@ -192,9 +229,16 @@ class CryptoTests(unittest.TestCase):
             self.assertEqual((a * b).decrypt(), 6)
             self.assertEqual(select(a > b, a, b).decrypt(), 3)
             self.assertEqual((a + 1).decrypt(), 4)
-            negative = EncryptedInt(-3, bits=4)
-            q, r = divmod(negative, b)
-            self.assertEqual((q.decrypt(), r.decrypt()), (-2, 1))
+            with self.assertRaises(NotImplementedError):
+                divmod(EncryptedInt(-3, bits=4), b)
+            dividend = EncryptedInt(7, bits=4, signed=False)
+            divisor = EncryptedInt(2, bits=4, signed=False)
+            q, r = divmod(dividend, divisor)
+            self.assertEqual((q.decrypt(), r.decrypt()), (3, 1))
+            self.assertEqual((dividend // 2).decrypt(), 3)
+            self.assertEqual((dividend % 2).decrypt(), 1)
+            self.assertEqual((7 // divisor).decrypt(), 3)
+            self.assertEqual((7 % divisor).decrypt(), 1)
             values = EncryptedVector([a, b])
             self.assertEqual(values[Ebool(1)].decrypt(), 2)
             f = EncryptedFixed(1.5, bits=8, frac=4)

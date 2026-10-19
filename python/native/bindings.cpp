@@ -19,6 +19,34 @@ Einteger integer(uint64_t value, size_t bits, bool sign, bool encrypt) {
                             : cfhe_base->GetConstantInt(value, bits), sign);
 }
 
+template <class T> void bind_vector(py::module_ &m, const char *name) {
+    py::class_<Evector<T>>(m, name)
+        .def(py::init([](py::iterable values) {
+            require_context();
+            Evector<T> result;
+            for (py::handle value : values) result.push_back(value.cast<T>());
+            if (result.empty()) throw py::value_error("Vector must be nonempty");
+            return result;
+        }))
+        .def("__len__", [](const Evector<T> &v) { return v.size(); })
+        .def("get", [](Evector<T> &v, size_t i) {
+            require_context();
+            return T(v.at(i));
+        })
+        .def("set", [](Evector<T> &v, size_t i, const T &value) {
+            require_context();
+            v.at(i) = value;
+        })
+        .def("get_encrypted", [](Evector<T> &v, const Einteger &i) {
+            require_context();
+            return static_cast<T>(v[i]);
+        })
+        .def("set_encrypted", [](Evector<T> &v, const Einteger &i, const T &value) {
+            require_context();
+            v[i] = value;
+        });
+}
+
 template <class T> T binary(const std::string &op, const T &a, const T &b) {
     require_context();
     if (op == "add") return a + b;
@@ -72,6 +100,8 @@ PYBIND11_MODULE(_native, m) {
         .def_property_readonly("bits", &Efixedpoint::getSize)
         .def_property_readonly("signed", &Efixedpoint::isSigned)
         .def_property_readonly("frac", &Efixedpoint::getFracSize);
+    bind_vector<Einteger>(m, "IntegerVector");
+    bind_vector<Efixedpoint>(m, "FixedVector");
     m.def("integer", &integer);
     m.def("fixed", [](uint64_t raw, size_t bits, size_t frac, bool sign, bool encrypt) {
         if (frac >= bits) throw py::value_error("frac must be smaller than bits");
@@ -102,8 +132,7 @@ PYBIND11_MODULE(_native, m) {
     m.def("fixed_negate", [](const Efixedpoint &a) { require_context(); return -a; });
     m.def("shift", [](const Einteger &a, int amount, bool left) {
         require_context();
-        if (amount < 0 || amount >= static_cast<int>(a.getSize()))
-            throw py::value_error("shift must be in [0, bits)");
+        if (amount < 0) throw py::value_error("negative shift count");
         return left ? a << amount : a >> amount;
     });
     m.def("cast", [](const Einteger &a, size_t bits, bool sign) {

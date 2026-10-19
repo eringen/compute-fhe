@@ -29,6 +29,11 @@ exist, select the current checkout's installation with
 For a source distribution downloaded separately, run `python -m pip install .`
 from the extracted package directory after installing the native dependencies.
 
+The bindings do not patch the C++ library. A clean build with AppleClang 21
+currently fails in upstream `Evector.h` because of its `Einteger` to `size_t`
+casts. Installing the bindings requires a working native library and headers;
+this PR does not resolve that upstream build issue.
+
 ## Example
 
 ```python
@@ -75,10 +80,13 @@ requires the native libraries. `Parameters.TOY` is for testing, not security.
 - `select(condition, a, b)` calls the upstream multiplexer. At least one branch
   must be encrypted. Both branches are evaluated before the call.
 - `EncryptedVector([Eint8(10), Eint8(20)])[Euint8(1)]` performs an oblivious
-  linear scan using native comparisons and multiplexers. Encrypted writes also
-  scan every element. An invalid encrypted index reads zero or leaves the vector
-  unchanged; it cannot raise a data-dependent exception. Plain indices follow
-  Python indexing. Vectors must be nonempty and homogeneous.
+  read through the existing C++ `Evector`/`Eitem` API. Writes also delegate to
+  native `Eitem`; no selection loop is implemented in Python. Upstream keeps
+  only the lowest `ceil(log2(length))` index bits (at least one), zero-extending
+  shorter indices. For length 3, encrypted index 4 therefore selects element 0;
+  index 3 reads zero and writes nothing. Supply valid encrypted indices when
+  aliasing is unwanted. Plain indices follow Python indexing. Vectors must be
+  nonempty and homogeneous.
 - Unsigned division by a public zero raises `ZeroDivisionError`. An encrypted divisor
   must be nonzero: the wrapper does not decrypt it to check. Use an encrypted
   comparison and `select()` to substitute a nonzero divisor when needed.
@@ -101,8 +109,9 @@ python python/examples/quickstart.py --simulation
 The default suite uses the actual native simulator. The optional crypto test
 uses upstream TOY parameters for a real encryption/evaluation/decryption check.
 
-The GitHub Actions Python workflow builds the checked-out C++ library and runs
-these tests against its installed bindings on Linux and macOS. See
+The GitHub Actions Python workflow attempts to build the checked-out C++ library
+and run these tests on Linux and macOS. Native build failures also fail the job;
+the macOS upstream build limitation above remains unresolved. See
 [development notes](CONTRIBUTING.md) for local build and test details.
 Please retain the research citations in the
 [parent README](../README.md#computefhe-privacy-preserving-general-purpose-computation-library)

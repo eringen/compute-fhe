@@ -225,10 +225,6 @@ class EncryptedInt(_Value):
         amount = operator.index(amount)
         if amount < 0:
             raise ValueError("negative shift count")
-        if amount >= self.bits:
-            if not left and self.signed:
-                return select(self < 0, self._coerce(-1), self._coerce(0))
-            return self._coerce(0)
         return EncryptedInt._wrap(_native.shift(self._value, amount, left), self._context)
 
     def __lshift__(self, amount): return self._shift(amount, True)
@@ -339,58 +335,62 @@ def select(condition, when_true, when_false):
 
 
 class EncryptedVector:
-    """Homogeneous values with oblivious O(n) encrypted reads and writes.
+    """Wrap native Evector reads and writes, including its index truncation.
 
-    An out-of-range encrypted index reads zero and writes nothing. Negative
-    plaintext indices follow Python's sequence convention.
+    Encrypted indices use only the low ceil(log2(length)) bits (at least one).
+    Plaintext indices follow Python's negative-index convention.
     """
 
     def __init__(self, values):
         self._context = _active()
-        self._values = list(values)
-        if not self._values or not isinstance(self._values[0], (EncryptedInt, EncryptedFixed)):
+        values = list(values)
+        if not values or not isinstance(values[0], (EncryptedInt, EncryptedFixed)):
             raise ValueError("Provide a nonempty sequence of encrypted values")
-        first = self._values[0]
-        for value in self._values:
-            if not isinstance(value, type(first)) and not (
-                isinstance(first, EncryptedInt) and isinstance(value, EncryptedInt)
-            ):
+        self._prototype = values[0]
+        self._cls = EncryptedInt if isinstance(values[0], EncryptedInt) else EncryptedFixed
+        for value in values:
+            if not isinstance(value, self._cls):
                 raise TypeError("Vector elements must have the same type")
-            first._coerce(value)
+            self._prototype._coerce(value)
+        native = _native.IntegerVector if self._cls is EncryptedInt else _native.FixedVector
+        self._value = native([value._value for value in values])
 
     def __len__(self):
-        return len(self._values)
+        self._context._check()
+        return len(self._value)
 
     def _index(self, index):
-        self._context._check()
         index._context._check()
         if index._context is not self._context:
             raise ValueError("Index belongs to a different context")
-        maximum = (1 << (index.bits - int(index.signed))) - 1
-        if len(self) - 1 > maximum:
-            raise ValueError("Index type cannot represent all vector positions")
+
+    def _plain_index(self, index):
+        index = operator.index(index)
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError("vector index out of range")
+        return index
 
     def __getitem__(self, index):
         self._context._check()
-        if not isinstance(index, EncryptedInt):
-            return self._values[operator.index(index)]
-        self._index(index)
-        result = self._values[0]._coerce(0)
-        for position, value in enumerate(self._values):
-            result = select(index == position, value, result)
-        return result
+        if isinstance(index, EncryptedInt):
+            self._index(index)
+            value = self._value.get_encrypted(index._value)
+        else:
+            value = self._value.get(self._plain_index(index))
+        return self._cls._wrap(value, self._context)
 
     def __setitem__(self, index, value):
         self._context._check()
-        value = self._values[0]._coerce(value)
+        value = self._prototype._coerce(value)
         if value is NotImplemented:
             raise TypeError("Unsupported vector value")
-        if not isinstance(index, EncryptedInt):
-            self._values[operator.index(index)] = value
-            return
-        self._index(index)
-        self._values = [select(index == position, value, old)
-                        for position, old in enumerate(self._values)]
+        if isinstance(index, EncryptedInt):
+            self._index(index)
+            self._value.set_encrypted(index._value, value._value)
+        else:
+            self._value.set(self._plain_index(index), value._value)
 
 
 def _integer_type(name, bits, signed):

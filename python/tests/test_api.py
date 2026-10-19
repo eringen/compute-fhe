@@ -143,7 +143,7 @@ class SimulationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             EncryptedFixed(1, bits=8, frac=8)
 
-    def test_oblivious_vector(self):
+    def test_native_vector_simulation(self):
         v = EncryptedVector([Eint8(10), Eint8(20), Eint8(30)])
         self.assertEqual(v[Euint8(1)].decrypt(), 20)
         v[Euint8(1)] = 25
@@ -154,10 +154,21 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(v[-1].decrypt(), 30)
         with self.assertRaises(IndexError):
             v[7]
-        with self.assertRaises(ValueError):
-            v[Ebool(1)]
+        # Native Eitem zero-extends short indices and truncates long ones.
+        self.assertEqual(v[Ebool(1)].decrypt(), 25)
+        self.assertEqual(v[Euint8(4)].decrypt(), 10)
+        v[Euint8(5)] = 26
+        self.assertEqual([x.decrypt() for x in v], [10, 26, 30])
         with self.assertRaises(TypeError):
             EncryptedVector([Eint8(1), Eint16(2)])
+
+    def test_native_fixed_vector_simulation(self):
+        v = EncryptedVector([EncryptedFixed(1.5, bits=16, frac=8),
+                             EncryptedFixed(-2.25, bits=16, frac=8)])
+        self.assertEqual(v[Euint8(1)].decrypt(), -2.25)
+        v[Ebool(0)] = -0.75
+        self.assertEqual([x.decrypt() for x in v], [-0.75, -2.25])
+        self.assertEqual(v[Euint8(2)].decrypt(), -0.75)
 
     def test_context_lifetime(self):
         with self.assertRaises(RuntimeError):
@@ -239,8 +250,11 @@ class CryptoTests(unittest.TestCase):
             self.assertEqual((dividend % 2).decrypt(), 1)
             self.assertEqual((7 // divisor).decrypt(), 3)
             self.assertEqual((7 % divisor).decrypt(), 1)
-            values = EncryptedVector([a, b])
-            self.assertEqual(values[Ebool(1)].decrypt(), 2)
+            values = EncryptedVector([Eint8(10), Eint8(20), Eint8(30)])
+            self.assertEqual(values[Euint8(1)].decrypt(), 20)
+            values[Euint8(1)] = 25
+            self.assertEqual([x.decrypt() for x in values], [10, 25, 30])
+            self.assertEqual(values[Euint8(4)].decrypt(), 10)
             f = EncryptedFixed(1.5, bits=8, frac=4)
             self.assertEqual((f + 0.25).decrypt(), 1.75)
             self.assertEqual((f * 2).decrypt(), 3.0)

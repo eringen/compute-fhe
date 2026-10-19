@@ -10,7 +10,7 @@ For a non-system installation:
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/prefix -DCMAKE_INSTALL_PREFIX=/path/to/prefix
-cmake --build build --target computefhe -j 4
+CPATH=/path/to/prefix/include cmake --build build --target computefhe -j 4
 cmake --install build
 CMAKE_PREFIX_PATH=/path/to/prefix python -m pip install -e ./python
 COMPUTEFHE_TEST_CRYPTO=1 python -m unittest discover -s python/tests -v
@@ -32,4 +32,13 @@ bindings retain the GIL. Tests must not replace native FHE with a Python mock.
 Initial scope covers local client and simulator contexts. Server key exchange,
 ciphertext serialization, signed division, fixed-point division, and the complete
 low-level ALU API are not exposed. The wrapper delegates unsigned division to
-native `DivU` and does not implement missing division algorithms.
+native `DivU`, vectors to `Evector`/`Eitem`, and shifts to native operators.
+Do not implement missing core algorithms or modify core sources in this PR.
+Python handles type conversion, argument validation, and context ownership.
+
+Local validation of the vector correction passed 17 tests, including real TOY
+encryption, against the previously installed library and headers that contained
+earlier portability fixes. Those fixes have been reverted from the PR. This
+result is not evidence that unmodified upstream builds on macOS: a separate
+AppleClang 21 build fails on the existing `Evector.h` casts. CI must build the
+checked-out core without patches and report any upstream build failures.
